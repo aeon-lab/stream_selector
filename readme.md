@@ -1,15 +1,22 @@
 # XDF Stream Selector
 
-A Python toolkit for extracting, filtering, synchronizing, and resampling multi-modal data streams from XDF (Extensible Data Format) files.
+A Python toolkit for extracting, filtering, synchronizing, and resampling multi-modal data streams from XDF (Extensible Data Format) files, plus utilities for survey data cleanup.
 
 ## Features
 
+### XDF Processing
 - 🔍 **Robust name matching** - Case-insensitive and whitespace-tolerant stream/channel selection
 - 🔄 **Multi-stream synchronization** - Align streams with different sampling rates
 - ⚡ **Flexible resampling** - Interpolate data to any target frequency
 - ✂️ **Edge truncation** - Remove unstable data from recording boundaries
 - 🛠️ **Diagnostic tools** - Debug stream selection issues easily
 - 📊 **All-in-one pipeline** - Process everything with a single function call
+
+### Survey Data Processing
+- 🧹 **Automatic cleanup** - Remove invalid entries and format inconsistencies
+- 🔢 **Smart type conversion** - Handle numeric fields with commas and special characters
+- 📅 **Year-to-experience conversion** - Automatically convert birth years to experience values
+- ✅ **Data validation** - Filter out non-numeric participant IDs
 
 ## Installation
 
@@ -20,6 +27,8 @@ pip install pandas numpy scipy pyxdf
 Then download `xdf_stream_processing.py` and place it in your project directory.
 
 ## Quick Start
+
+### XDF Processing
 
 ```python
 import pyxdf
@@ -97,7 +106,101 @@ df = resample_dataframe(df, target_freq=100.0)
 df = truncate_dataframe(df, n=50)
 ```
 
+## Survey Data Processing
+
+The toolkit includes utilities for cleaning survey data, particularly useful for preprocessing questionnaire responses before analysis.
+
+### Features
+
+- **Participant ID cleanup**: Remove special characters (e.g., '#5' → '5')
+- **Invalid entry filtering**: Remove non-numeric participant IDs (e.g., rows starting with letters)
+- **Numeric field cleaning**: Remove commas from numeric fields (e.g., '1,000' → '1000')
+- **Smart year conversion**: Convert year values to experience (e.g., '1995' → '30' for experience)
+
+### Usage Example
+
+```python
+import pandas as pd
+
+# Load your survey data
+survey_data = pd.read_csv("raw_survey.csv")
+
+# Make a proper copy to avoid warnings
+selected_data = survey_data.copy()
+
+# Clean participant IDs - remove '#' prefix
+selected_data['pid'] = selected_data['pid'].astype(str).str.replace('#', '', regex=False)
+
+# Filter out invalid participant IDs (keep only numeric)
+selected_data = selected_data[selected_data['pid'].str.match(r'^\d', na=False)].copy()
+
+# Remove commas from numeric fields (e.g., flight hours)
+selected_data['flt_hrs'] = selected_data['flt_hrs'].astype(str).str.replace(',', '', regex=False)
+
+# Clean experience column with smart year detection
+def clean_experience(val):
+    try:
+        num = float(val.replace(',', ''))
+        if num >= 1900:  # Likely a year, convert to experience
+            return str(int(2025 - num))
+        else:  # Already an experience value
+            return str(int(num))
+    except:
+        return val  # Keep original if conversion fails
+
+selected_data['experience'] = selected_data['experience'].astype(str).apply(clean_experience)
+
+# Save cleaned data
+clean_survey_data = selected_data.copy()
+clean_survey_data.to_csv('clean_survey_data.csv', index=False)
+
+print(f"Cleaned {len(clean_survey_data)} survey responses")
+```
+
+### Common Survey Cleanup Steps
+
+1. **Remove special characters from IDs**
+   ```python
+   df['pid'] = df['pid'].astype(str).str.replace('#', '', regex=False)
+   ```
+
+2. **Filter invalid entries**
+   ```python
+   df = df[df['pid'].str.match(r'^\d', na=False)].copy()
+   ```
+
+3. **Clean numeric fields**
+   ```python
+   df['numeric_field'] = df['numeric_field'].astype(str).str.replace(',', '', regex=False)
+   ```
+
+4. **Convert years to age/experience**
+   ```python
+   def year_to_experience(val, current_year=2025):
+       try:
+           num = float(val.replace(',', ''))
+           if num >= 1900:
+               return str(int(current_year - num))
+           return str(int(num))
+       except:
+           return val
+   
+   df['experience'] = df['experience'].astype(str).apply(year_to_experience)
+   ```
+
+### Validation Checks
+
+After cleaning, always verify your data:
+
+```python
+print(f"Shape after cleaning: {clean_survey_data.shape}")
+print(f"\nUnique participant IDs: {clean_survey_data['pid'].nunique()}")
+print(f"\nCleaned experience values:\n{clean_survey_data['experience'].value_counts()}")
+```
+
 ## Key Parameters
+
+### XDF Processing
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -141,24 +244,43 @@ Example:
 
 ## Common Use Cases
 
-### High-frequency signals (ECG, EEG)
+### XDF Streams
+
+#### High-frequency signals (ECG, EEG)
 ```python
 df = process_xdf_streams(streams, selection, target_freq=250.0)
 ```
 
-### Low-frequency signals (HR, pupil diameter)
+#### Low-frequency signals (HR, pupil diameter)
 ```python
 df = process_xdf_streams(streams, selection, target_freq=10.0)
 ```
 
-### No resampling (keep original rates)
+#### No resampling (keep original rates)
 ```python
 df = streams_to_dataframe(streams, resample=False)
 ```
 
-### Remove edge effects
+#### Remove edge effects
 ```python
 df = process_xdf_streams(streams, selection, truncate_n=200)
+```
+
+### Survey Data
+
+#### Clean pilot study data
+```python
+# Remove test entries and format fields
+survey = survey[survey['pid'].str.match(r'^\d', na=False)].copy()
+survey['flt_hrs'] = survey['flt_hrs'].str.replace(',', '')
+```
+
+#### Prepare for statistical analysis
+```python
+# Convert all numeric fields to proper types
+numeric_cols = ['flt_hrs', 'experience', 'age']
+for col in numeric_cols:
+    survey[col] = pd.to_numeric(survey[col], errors='coerce')
 ```
 
 ## Examples
@@ -169,6 +291,7 @@ See `example_usage.py` for comprehensive examples including:
 3. Custom processing workflows
 4. Diagnostic and debugging tools
 5. Multiple processing frequencies
+6. Survey data cleanup workflows
 
 Run examples:
 ```bash
@@ -176,6 +299,8 @@ python example_usage.py
 ```
 
 ## Functions Overview
+
+### XDF Processing
 
 | Function | Purpose |
 |----------|---------|
@@ -186,6 +311,10 @@ python example_usage.py
 | `streams_to_dataframe()` | Synchronize and merge streams |
 | `resample_dataframe()` | Resample to uniform frequency |
 | `truncate_dataframe()` | Remove edge samples |
+
+### Survey Processing
+
+Survey data cleanup functions are provided as code snippets in the documentation above. For a complete implementation, see the examples directory.
 
 ## Requirements
 
@@ -237,9 +366,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Author
+## Authors
 
-Md Mijanur Rahman
+Md Mijanur Rahman  
 Niklas P. Schulmeyer
 
 ## Contributing
